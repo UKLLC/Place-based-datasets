@@ -49,15 +49,23 @@ for a in cuts:
 for i in cuts:
     print(imd19sub['imd2019_q'+str(i)].value_counts())
 # create list of decile vars to operate on
-
+imd19sub_cols = imd19sub.columns.values.tolist()
+# extract deciles vars
+decs = [x for x in imd19sub_cols if "Decile" in x]
+# define new var names 
+decs_new = list(imd_vars.values())
+decs_new = [x + "_q10" for x in decs_new]
+# convert to dict
+decs_d = dict(zip(decs, decs_new))
+# rename
+for k, v in decs_d.items():
+    imd19sub.rename({k:v}, axis=1, inplace = True)
 # create list of rank vars to drop
-
+rank = [x for x in imd19sub_cols if "Rank" in x]
+# other columns, combine with rank vars
+to_drop = ['Local Authority District code (2019)', 'Local Authority District name (2019)','LSOA name (2011)'] + rank
 # drop unrequired cols
-imd19sub = imd19sub.drop(columns=['t1', 'Local Authority District code (2019)', 'Local Authority District name (2019)'])
-
-# 1b) IMD sub domains 
-#imd19sub = pd.read_excel(dataloc+"/IMD/File_2_-_IoD2019_Domains_of_Deprivation.xlsx", sheet_name="IoD2019 Domains")
-
+imd19sub = imd19sub.drop(columns=to_drop)
 
 # 2) pop density
 pop_den = pd.read_excel(dataloc+"/pop_den/sape23dt11mid2020lsoapopulationdensity.xlsx", sheet_name="Mid-2020 Population Density", skiprows = 4)
