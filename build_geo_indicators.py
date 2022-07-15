@@ -11,13 +11,39 @@ import numpy as np
 # functions
 # quantile maker
 def make_quantiles(df, var_to_cut, new_var_name, cut_num):
+    '''
+    Parameters
+    ----------
+    df : dataframe with values to operate on
+    var_to_cut : list of variables in dataframe to operate on
+    new_var_name : new variable name once processed
+    cut_num : quantile/cut value
+
+    Returns
+    -------
+    df : returns input dataframe with new variables added
+
+    '''
     # create var name
     v = str(new_var_name) + '_q' + str(cut_num)
     print(v)
     df[v] = pd.qcut(df[var_to_cut], cut_num, labels=False) + 1 
     return df
+
 # incremental list generator
 def incremental_range(start, stop, step):
+    '''
+    Parameters
+    ----------
+    start : numeric start of range
+    stop : numeric end of range
+    step : numeric step between 
+
+    Yields
+    ------
+    value : returned back to function
+    
+    '''
     value = start
     while value < stop:
         yield value
@@ -25,31 +51,31 @@ def incremental_range(start, stop, step):
 
 # file locations
 dataloc = "L:/Data/geo_data"
-# 1a) import IMD with subdomains
-imd19sub = pd.read_excel(dataloc+"/IMD/File_2_-_IoD2019_Domains_of_Deprivation.xlsx", sheet_name="IoD2019 Domains")
-# define cuts
-cuts = [3,4,5]
-# define vars to operate on with new vars names in dict
-imd_vars = {'Index of Multiple Deprivation (IMD) Rank (where 1 is most deprived)': 'imd2019',
-            'Income Rank (where 1 is most deprived)': 'imd2019_income',
-            'Employment Rank (where 1 is most deprived)': 'imd2019_employment',
-            'Education, Skills and Training Rank (where 1 is most deprived)': 'imd2019_education',
-            'Health Deprivation and Disability Rank (where 1 is most deprived)': 'imd2019_health',
-            'Crime Rank (where 1 is most deprived)': 'imd2019_crime',
-            'Barriers to Housing and Services Rank (where 1 is most deprived)': 'imd2019_barriers',
-            'Living Environment Rank (where 1 is most deprived)': 'imd2019_environment',
-            }
 
+# 1a) IMD -  import IMD with subdomains
+imd19sub = pd.read_excel(dataloc+"/IMD/File_2_-_IoD2019_Domains_of_Deprivation.xlsx", sheet_name="IoD2019 Domains")
+
+# CREATE QUANTILES
+# define cuts (quantiles)
+cuts = [3,4,5]
+# create list of decile vars to operate on as these are included in the dataset already 
+imd19sub_cols = imd19sub.columns.values.tolist()
+# create list of rank vars to drop
+rank = [x for x in imd19sub_cols if "Rank" in x]
+# define new rank var names
+imd_vars_ls = ['imd2019', 'imd2019_income', 'imd2019_employment', 'imd2019_education',
+            'imd2019_health','imd2019_crime','imd2019_barriers', 'imd2019_environment']
+# put old and new var names together in list
+imd_vars = dict(zip(rank, imd_vars_ls))
 # derive quintiles, quartiles, tertiles
 for a in cuts:
     for k, v in imd_vars.items():
         make_quantiles(imd19sub, k, v, a)
-
 # value counts check
 for i in cuts:
     print(imd19sub['imd2019_q'+str(i)].value_counts())
-# create list of decile vars to operate on
-imd19sub_cols = imd19sub.columns.values.tolist()
+
+# ISOLATE DECILES
 # extract deciles vars
 decs = [x for x in imd19sub_cols if "Decile" in x]
 # define new var names 
@@ -60,6 +86,8 @@ decs_d = dict(zip(decs, decs_new))
 # rename
 for k, v in decs_d.items():
     imd19sub.rename({k:v}, axis=1, inplace = True)
+    
+# CLEARUP AND STRIP DOWN DF
 # create list of rank vars to drop
 rank = [x for x in imd19sub_cols if "Rank" in x]
 # other columns, combine with rank vars
