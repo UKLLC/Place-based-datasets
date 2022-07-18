@@ -49,7 +49,7 @@ def incremental_range(start, stop, step):
         yield value
         value += step
 
-# file locations
+# data file locations
 dataloc = "L:/Data/geo_data"
 
 # 1a) IMD -  import IMD with subdomains
@@ -95,32 +95,64 @@ to_drop = ['Local Authority District code (2019)', 'Local Authority District nam
 # drop unrequired cols
 imd19sub = imd19sub.drop(columns=to_drop)
 
+###################
 # 2) pop density
+###################
 pop_den = pd.read_excel(dataloc+"/pop_den/sape23dt11mid2020lsoapopulationdensity.xlsx", sheet_name="Mid-2020 Population Density", skiprows = 4)
 # hist to assess distributio
 pop_den.hist(column='People per Sq Km')
 # cut up col
 # first create incremental list
 t1 = list(incremental_range(0, 10100, 100))
-# then create catagorical variable
-pop_den['people_km2_mid2020'] = pd.cut(pop_den['People per Sq Km'], bins=t1)
-# value counts check
+# then create catagorical variable as string
+pop_den['people_km2_mid2020'] = pd.cut(pop_den['People per Sq Km'], bins=t1).astype(str)
+# add topcut
+pop_den['people_km2_mid2020'] = np.where(pop_den['People per Sq Km']>=10000,">=10000",pop_den['people_km2_mid2020'])
+# value counts
 t2 = pop_den['people_km2_mid2020'].value_counts()
+# strip down vars
+pop_den = pop_den[['LSOA Code','people_km2_mid2020']]
 # merge with IMD file
-all_geo = imd19.merge(pop_den, how='right', left_on='LSOA code (2011)', right_on='LSOA Code')
+all_geo = imd19sub.merge(pop_den, how='right', left_on='LSOA code (2011)', right_on='LSOA Code')
 
+#####################
 # 3) urban rural
+#####################
+# 3a) data
 urb_rur = pd.read_csv(dataloc+"/urb_rur/Rural_Urban_Classification_(2011)_of_Lower_Layer_Super_Output_Areas_in_England_and_Wales.csv")
-# check counts of urb rur codes - maybe need to look at collapsing those in sparse setting
-urb_rur['RUC11CD'].value_counts()
-# drop unrequireed vars
-urb_rur = urb_rur.drop(columns=['FID'])
+# recode - keep letter component only - this is to minimise disc risk where the sparse settting component is included
+urb_rur['RUC11CD_V2'] = urb_rur['RUC11CD'].str[0]
+urb_rur['RUC11CD_V2'].value_counts()
+# strip down actual data dropping unrequireed vars
+urb_rur = urb_rur[['LSOA11CD', 'RUC11CD_V2']]
 # merge with other geo data
 all_geo = all_geo.merge(urb_rur, how='inner', left_on='LSOA code (2011)', right_on='LSOA11CD')
-# test to look at areas which have codes with low counts
-#t1 = urb_rur.loc[urb_rur['RUC11CD']=='C2']
 
+
+# 3b) metadata
+# created collapse df which can be used to generate metadata table
+urb_rur_meta = urb_rur[['RUC11', 'RUC11CD_V2']].drop_duplicates(subset='RUC11CD_V2', keep='last')
+# update metadata to reflect collapse of catagories 
+urb_rur_meta['RUC11'] = np.where(urb_rur_meta['RUC11CD_V2']=='C','Urban city and town (incl. in sparse setting)',
+                                 np.where(urb_rur_meta['RUC11CD_V2']=='D', 'Rural town and fringe (incl. in a sparse setting)',
+                                 np.where(urb_rur_meta['RUC11CD_V2']=='E', 'Rural village and dispersed (incl. in a sparse setting)',
+                                          urb_rur_meta['RUC11'])))
+# rename cols to metadata convention
+urb_rur_meta.rename({'RUC11' : 'variable_label',
+                     'RUC11CD_V2' : 'value_value'}, axis=1, inplace = True)
+# create missing columns
+urb_rur_meta['table_name'] = 'geodata_nhs_geo_indicators'
+urb_rur_meta['variable_name'] = 'RUC11CD_V2'
+# assign to values - vars required : table_name, variable_name, value_value, value_label
+urb_rur_vals = urb_rur_meta
+# create descriptions table - vars required: table_name, variable_name, variable_label
+urb_rur_desc = urb_rur_meta[['table_name', 'variable_name']].drop_duplicates()
+# add variable label 
+urb_rur_desc['variable_label'] = '2011 Urban rural classification collapsed from 8 catogories to 5'
+
+####################
 # 4) Region
+####################
 # bring in lookups
 t1 = pd.read_csv(dataloc+"/lookups/Lower_Layer_Super_Output_Area_(2011)_to_Ward_(2017)_Lookup_in_England_and_Wales.csv")
 t2 = pd.read_csv(dataloc+"/lookups/Ward_to_Local_Authority_District_to_County_to_Region_to_Country_(December_2017)_Lookup_in_United_Kingdom_version_2.csv")
