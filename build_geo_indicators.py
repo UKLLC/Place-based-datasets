@@ -9,7 +9,6 @@ import pandas as pd
 import numpy as np
 
 # functions
-# quantile maker
 def make_quantiles(df, var_to_cut, new_var_name, cut_num):
     '''
     Parameters
@@ -49,10 +48,35 @@ def incremental_range(start, stop, step):
         yield value
         value += step
 
+# label generator for quantiles
+def label_replace(quantile):
+    '''
+    Parameters
+    ----------
+    quantile : specify numeric quantile
+    
+    Returns
+    -------
+    df : returns copy of decile dataframe with other quantiles added
+
+    '''
+    # calc % element of label
+    perc = int(100/quantile)
+    # take copy of decile dataframe (used as base)
+    df = t10.copy()
+    # renaming and replacing
+    df.columns = ['variable_label', 'variable_name']
+    df['variable_label'] = df['variable_label'].str.replace('10%', str(int(perc))+'%')
+    df['variable_name'] = df['variable_name'].str.replace('q10', 'q'+str(quantile))
+    # return new dataframe
+    return df
+
 # data file locations
 dataloc = "L:/Data/geo_data"
 
+###################
 # 1a) IMD - data
+###################
 # import IMD with subdomains
 imd19sub = pd.read_excel(dataloc+"/IMD/File_2_-_IoD2019_Domains_of_Deprivation.xlsx", sheet_name="IoD2019 Domains")
 # CREATE QUANTILES
@@ -96,7 +120,9 @@ imd19sub = imd19sub.drop(columns=to_drop)
 # rename LSAO 2011 col
 imd19sub.rename({'LSOA code (2011)' : 'LSOA11CD'}, axis=1, inplace=True)
 
+###################
 # 1b) IMD metadata
+###################
 # only need variable lables (not values for this one)
 # isolate column names
 imd_cols = list(imd19sub.columns)
@@ -104,25 +130,6 @@ imd_cols.remove("LSOA11CD")
 # convert to df
 t10 = pd.DataFrame.from_dict(decs_d, orient='index').reset_index()
 t10.columns = ['variable_label', 'variable_name']
-# create quintile version
-#t5 = t10
-#t5.columns = ['variable_label', 'variable_name']
-# replace in label column
-#t5['variable_label'] = t5['variable_label'].str.replace('10%', '20%')
-#t5['variable_name'] = t5['variable_name'].str.replace('q10', 'q5')
-
-def label_replace(quantile):
-    # calc % element of label
-    perc = int(100/quantile)
-    # take copy of decile dataframe (used as base)
-    df = t10.copy()
-    # renaming and replacing
-    df.columns = ['variable_label', 'variable_name']
-    df['variable_label'] = df['variable_label'].str.replace('10%', str(int(perc))+'%')
-    df['variable_name'] = df['variable_name'].str.replace('q10', 'q'+str(quantile))
-    # return new dataframe
-    return df
-
 # create second list with dataframe names
 cuts2 = ['t'+str(i) for i in cuts]
 # convert to dict
@@ -154,7 +161,6 @@ pop_den['people_km2_2020'] = pd.cut(pop_den['People per Sq Km'], bins=t1).astype
 pop_den['people_km2_2020'] = np.where(pop_den['People per Sq Km']>=10000,">=10000",pop_den['people_km2_2020'])
 # cleanup 
 pop_den['people_km2_2020'] = pop_den['people_km2_2020'].str.replace("(","").str.replace("]","").str.replace(","," -")
-
 # value counts
 t2 = pop_den['people_km2_2020'].value_counts()
 # strip down vars
@@ -174,47 +180,54 @@ popd_var_labs = {
     'people_km2_2020' : 'People per Sq Km - mid 2020'}
 # convert to df
 popd_var_labs_df = pd.DataFrame(popd_var_labs.items(), columns=['variable_name', 'variable_label'])
-# value labels - using string rather than value lables here
-
+# value labels - using string rather than value labels here
 
 #####################
-# 3) urban rural
+# 3a) urban rural data
 #####################
-# 3a) data
 # import UR 2011 master file
 urb_rur = pd.read_csv(dataloc+"/urb_rur/Rural_Urban_Classification_(2011)_of_Lower_Layer_Super_Output_Areas_in_England_and_Wales.csv")
 # recode - keep letter component only - this is to minimise disc risk where the sparse settting component is included
 urb_rur['RUC11CD_V2'] = urb_rur['RUC11CD'].str[0]
 urb_rur['RUC11CD_V2'].value_counts()
+# recode to numeric 
+urb_rur['RUC11CD_V2'] = np.where(urb_rur['RUC11CD_V2']=='A', 1,
+                                       np.where(urb_rur['RUC11CD_V2']=='B', 2,
+                                                np.where(urb_rur['RUC11CD_V2']=='C', 3,
+                                                         np.where(urb_rur['RUC11CD_V2']=='D', 4,
+                                                                  np.where(urb_rur['RUC11CD_V2']=='E', 5,
+                                                                           "")))))
 # strip down actual data dropping unrequireed vars
-urb_rur = urb_rur[['LSOA11CD', 'RUC11CD_V2']]
+urb_rur_final = urb_rur[['LSOA11CD', 'RUC11CD_V2']]
+# check vals again
+urb_rur_final['RUC11CD_V2'].value_counts()
 # merge with other geo data
-all_geo = all_geo.merge(urb_rur, how='inner', on='LSOA11CD')
+all_geo = all_geo.merge(urb_rur_final, how='inner', on='LSOA11CD')
 
-
-# 3b) metadata
+#####################
+# 3b) urban rural metadata
+#####################
 # created collapse df which can be used to generate metadata table
 urb_rur_meta = urb_rur[['RUC11', 'RUC11CD_V2']].drop_duplicates(subset='RUC11CD_V2', keep='last')
 # update metadata to reflect collapse of catagories 
-urb_rur_meta['RUC11'] = np.where(urb_rur_meta['RUC11CD_V2']=='C','Urban city and town (incl. in sparse setting)',
-                                 np.where(urb_rur_meta['RUC11CD_V2']=='D', 'Rural town and fringe (incl. in a sparse setting)',
-                                 np.where(urb_rur_meta['RUC11CD_V2']=='E', 'Rural village and dispersed (incl. in a sparse setting)',
+urb_rur_meta['RUC11'] = np.where(urb_rur_meta['RUC11CD_V2']==3,'Urban city and town (incl. in sparse setting)',
+                                 np.where(urb_rur_meta['RUC11CD_V2']==4, 'Rural town and fringe (incl. in a sparse setting)',
+                                 np.where(urb_rur_meta['RUC11CD_V2']==5, 'Rural village and dispersed (incl. in a sparse setting)',
                                           urb_rur_meta['RUC11'])))
 # rename cols to metadata convention
 urb_rur_meta.rename({'RUC11' : 'variable_label',
                      'RUC11CD_V2' : 'value_value'}, axis=1, inplace = True)
 # create missing columns
-urb_rur_meta['table_name'] = 'geodata_nhs_geo_indicators'
 urb_rur_meta['variable_name'] = 'RUC11CD_V2'
 # assign to values - vars required : table_name, variable_name, value_value, value_label
 urb_rur_vals = urb_rur_meta
 # create descriptions table - vars required: table_name, variable_name, variable_label
-urb_rur_desc = urb_rur_meta[['table_name', 'variable_name']].drop_duplicates()
+urb_rur_desc = urb_rur_meta[['variable_name']].drop_duplicates()
 # add variable label 
 urb_rur_desc['variable_label'] = '2011 Urban rural classification collapsed from 8 catogories to 5'
 
 ####################
-# 4) Region
+# 4a) Region data
 ####################
 # bring in lookups
 t1 = pd.read_csv(dataloc+"/lookups/Lower_Layer_Super_Output_Area_(2011)_to_Ward_(2017)_Lookup_in_England_and_Wales.csv")
@@ -223,16 +236,53 @@ t3 = t1.merge(t2, how='inner', on='WD17CD')
 # value counts
 t3['GOR10NM'].value_counts()
 # drop unrequired vars
-regions = t3[['LSOA11CD', 'GOR10CD', 'GOR10NM', 'CTRY17CD', 'CTRY17NM']]
+regions = t3[['LSOA11CD', 'GOR10NM', 'CTRY17NM']]
 # merge with other geo files
 all_geo = all_geo.merge(regions, how='left', on='LSOA11CD')
-# clearup
-all_geo  = all_geo.drop(columns=['LSOA code (2011)', 'LSOA Code', 'LSOA name (2011)', 'LSOA Name'])
 
+####################
+# 4b) create metadata
+####################
+# variable labels define
+reg_var_labs = {
+    'GOR10NM' : 'Region name - 2010',
+    'CTRY17NM' : 'Country name 2017'}
+# convert to df
+reg_var_labs_df = pd.DataFrame(reg_var_labs.items(), columns=['variable_name', 'variable_label'])
+
+##########################################
+# 5) bring all data and metadata together
+#########################################
+# 5a) data
+# all cols names to lower
+all_geo.columns = all_geo.columns.str.lower()
 # dump out as csv
-all_geo.to_csv(dataloc+"/data_processing/geo_file2/Linkage_lsoa_geo_data.csv", index=False)
+all_geo.to_csv(dataloc+"/data_processing/geo_file2/CORE_geo_indicators_nhsd_v0001_20220808.csv", index=False)
 
-# generate metadata
+# 5b) metadata - desc
+# stitch together
+all_geo_desc = pd.concat([reg_var_labs_df, urb_rur_desc, popd_var_labs_df, cut_all_df], ignore_index=True)
+# add table_name col
+all_geo_desc.insert(0, 'table_name','')
+all_geo_desc['table_name'] = 'geo_indicators_nhsd_v0001_20220808'
+# convert to lower
+all_geo_desc['variable_name'] = all_geo_desc['variable_name'].str.lower()
+# dump as csv
+all_geo_desc.to_csv(dataloc+"/data_processing/geo_file2/CORE_geo_indicators_nhsd_v0001_description_20220808.csv", index=False)
+
+# 5c) metadata - value labels
+# only using urb_rural here
+all_geo_vals = urb_rur_vals
+# add table_name col
+all_geo_vals .insert(0, 'table_name','')
+all_geo_vals ['table_name'] = 'geo_indicators_nhsd_v0001_20220808'
+# dump as csv
+all_geo_vals.to_csv(dataloc+"/data_processing/geo_file2/CORE_geo_indicators_nhsd_v0001_values_20220808.csv", index=False)
+
+
+
+
+
 
 
 
